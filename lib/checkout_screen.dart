@@ -49,6 +49,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   for (final item in order.items)
                     ListTile(
                       title: Text('${item.quantity}x ${item.productName}'),
+                      subtitle: item.notes != null && item.notes!.isNotEmpty
+                          ? Text(item.notes!, style: const TextStyle(fontStyle: FontStyle.italic))
+                          : null,
                       trailing: Text(_currencyFmt.format(item.subtotal)),
                     ),
                   const Divider(),
