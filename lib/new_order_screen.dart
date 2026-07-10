@@ -192,33 +192,47 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                 for (final category in categories) ...[
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-                    child: Text(category, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                    child: Text(
+                      category,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                    ),
                   ),
                   ..._products.where((p) => p.category == category).map((product) {
                     final inCart = _cart[product.id];
-                    return ListTile(
-                      title: Text(product.name),
-                      subtitle: Text(_currencyFmt.format(product.price)),
-                      onLongPress: () => _deleteProduct(product),
-                      trailing: inCart == null
-                          ? IconButton.filled(
-                              icon: const Icon(Icons.add),
-                              onPressed: () => _addToCart(product),
-                            )
-                          : Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  icon: const Icon(Icons.remove_circle_outline),
-                                  onPressed: () => _removeFromCart(product.id!),
-                                ),
-                                Text('${inCart.quantity}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                                IconButton(
-                                  icon: const Icon(Icons.add_circle),
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      child: Card(
+                        child: ListTile(
+                          title: Text(product.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                          subtitle: Text(
+                            _currencyFmt.format(product.price),
+                            style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w600),
+                          ),
+                          onLongPress: () => _deleteProduct(product),
+                          trailing: inCart == null
+                              ? IconButton.filled(
+                                  icon: const Icon(Icons.add),
                                   onPressed: () => _addToCart(product),
+                                )
+                              : Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(Icons.remove_circle_outline),
+                                      onPressed: () => _removeFromCart(product.id!),
+                                    ),
+                                    Text('${inCart.quantity}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                    IconButton(
+                                      icon: const Icon(Icons.add_circle),
+                                      onPressed: () => _addToCart(product),
+                                    ),
+                                  ],
                                 ),
-                              ],
-                            ),
+                        ),
+                      ),
                     );
                   }),
                 ],
