@@ -63,7 +63,7 @@ class PrinterService {
     final currencyFmt = NumberFormat.currency(locale: 'es_MX', symbol: '\$');
 
     bytes += generator.text(
-      'TAQUERIA',
+      'TAKI-TAKI',
       styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size2, width: PosTextSize.size2),
     );
     bytes += generator.text(
