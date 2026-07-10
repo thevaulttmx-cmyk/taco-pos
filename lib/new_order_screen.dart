@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import 'database_service.dart';
 import 'printer_service.dart';
+import 'item_notes_dialog.dart';
 
 class NewOrderScreen extends StatefulWidget {
   const NewOrderScreen({super.key});
@@ -17,7 +18,10 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
   final _currencyFmt = NumberFormat.currency(locale: 'es_MX', symbol: '\$');
 
   List<Product> _products = [];
-  final Map<int, OrderItem> _cart = {}; // productId -> OrderItem
+  // Lista de líneas del carrito (puede haber varias líneas del mismo
+  // producto si tienen notas distintas, ej. "2 tacos sin cebolla" y
+  // "1 taco normal" son dos líneas separadas).
+  final List<OrderItem> _cart = [];
   bool _loading = true;
 
   @override
@@ -34,32 +38,67 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
     });
   }
 
-  double get _cartTotal => _cart.values.fold(0.0, (sum, item) => sum + item.subtotal);
-  int get _cartCount => _cart.values.fold(0, (sum, item) => sum + item.quantity);
+  double get _cartTotal => _cart.fold(0.0, (sum, item) => sum + item.subtotal);
+  int get _cartCount => _cart.fold(0, (sum, item) => sum + item.quantity);
 
-  void _addToCart(Product product) {
+  // Línea "simple" (sin notas) para un producto, usada para el stepper
+  // rápido +/- que aparece junto a cada producto del menú.
+  OrderItem? _plainLineFor(int productId) {
+    for (final item in _cart) {
+      if (item.productId == productId && (item.notes == null || item.notes!.isEmpty)) {
+        return item;
+      }
+    }
+    return null;
+  }
+
+  void _addPlain(Product product) {
     setState(() {
-      if (_cart.containsKey(product.id)) {
-        _cart[product.id!]!.quantity++;
+      final existing = _plainLineFor(product.id!);
+      if (existing != null) {
+        existing.quantity++;
       } else {
-        _cart[product.id!] = OrderItem(
+        _cart.add(OrderItem(
           productId: product.id!,
           productName: product.name,
           unitPrice: product.price,
           quantity: 1,
-        );
+        ));
       }
     });
   }
 
-  void _removeFromCart(int productId) {
+  void _removePlain(Product product) {
     setState(() {
-      final item = _cart[productId];
-      if (item == null) return;
-      if (item.quantity > 1) {
-        item.quantity--;
+      final existing = _plainLineFor(product.id!);
+      if (existing == null) return;
+      if (existing.quantity > 1) {
+        existing.quantity--;
       } else {
-        _cart.remove(productId);
+        _cart.remove(existing);
+      }
+    });
+  }
+
+  Future<void> _customizeAndAdd(Product product) async {
+    final result = await showItemNotesDialog(context, productName: product.name);
+    if (result == null) return; // canceló
+    setState(() {
+      // Si ya hay una línea con exactamente las mismas notas, súmale cantidad.
+      final match = _cart.firstWhere(
+        (i) => i.productId == product.id && i.notes == result.notes,
+        orElse: () => OrderItem(productId: -1, productName: '', unitPrice: 0),
+      );
+      if (match.productId == product.id && result.notes.isNotEmpty) {
+        match.quantity++;
+      } else {
+        _cart.add(OrderItem(
+          productId: product.id!,
+          productName: product.name,
+          unitPrice: product.price + result.extraPrice,
+          quantity: 1,
+          notes: result.notes.isEmpty ? null : result.notes,
+        ));
       }
     });
   }
@@ -130,6 +169,78 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
     }
   }
 
+  Future<void> _openCartReview() async {
+    if (_cart.isEmpty) return;
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            return DraggableScrollableSheet(
+              initialChildSize: 0.6,
+              minChildSize: 0.3,
+              maxChildSize: 0.9,
+              expand: false,
+              builder: (ctx, scrollController) {
+                return Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text('Carrito', style: Theme.of(context).textTheme.titleLarge),
+                      const SizedBox(height: 8),
+                      Expanded(
+                        child: ListView.builder(
+                          controller: scrollController,
+                          itemCount: _cart.length,
+                          itemBuilder: (ctx, index) {
+                            final item = _cart[index];
+                            return Card(
+                              margin: const EdgeInsets.symmetric(vertical: 4),
+                              child: ListTile(
+                                title: Text('${item.quantity}x ${item.productName}'),
+                                subtitle: item.notes != null && item.notes!.isNotEmpty
+                                    ? Text(item.notes!, style: const TextStyle(fontStyle: FontStyle.italic))
+                                    : null,
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(_currencyFmt.format(item.subtotal), style: const TextStyle(fontWeight: FontWeight.bold)),
+                                    IconButton(
+                                      icon: const Icon(Icons.delete_outline, color: Colors.red),
+                                      onPressed: () {
+                                        setState(() => _cart.removeAt(index));
+                                        setSheetState(() {});
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      const Divider(),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Total', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                          Text(_currencyFmt.format(_cartTotal),
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
   Future<void> _sendToKitchen() async {
     if (_cart.isEmpty) return;
 
@@ -156,12 +267,11 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
 
     if (customerName == null || customerName.isEmpty) return;
 
-    final order = Order(customerName: customerName, items: _cart.values.toList());
+    final order = Order(customerName: customerName, items: List.of(_cart));
     final orderId = await _db.createOrder(order);
 
     if (!mounted) return;
 
-    // Intenta imprimir el ticket
     final printed = await PrinterService.instance.printOrderTicket(order, orderNumber: orderId);
 
     setState(() => _cart.clear());
@@ -201,7 +311,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                     ),
                   ),
                   ..._products.where((p) => p.category == category).map((product) {
-                    final inCart = _cart[product.id];
+                    final plainLine = _plainLineFor(product.id!);
                     return Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                       child: Card(
@@ -212,25 +322,36 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                             style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w600),
                           ),
                           onLongPress: () => _deleteProduct(product),
-                          trailing: inCart == null
-                              ? IconButton.filled(
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.tune),
+                                tooltip: 'Personalizar (sin cebolla, con todo, etc.)',
+                                onPressed: () => _customizeAndAdd(product),
+                              ),
+                              if (plainLine == null)
+                                IconButton.filled(
                                   icon: const Icon(Icons.add),
-                                  onPressed: () => _addToCart(product),
+                                  onPressed: () => _addPlain(product),
                                 )
-                              : Row(
+                              else
+                                Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     IconButton(
                                       icon: const Icon(Icons.remove_circle_outline),
-                                      onPressed: () => _removeFromCart(product.id!),
+                                      onPressed: () => _removePlain(product),
                                     ),
-                                    Text('${inCart.quantity}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                    Text('${plainLine.quantity}', style: const TextStyle(fontWeight: FontWeight.bold)),
                                     IconButton(
                                       icon: const Icon(Icons.add_circle),
-                                      onPressed: () => _addToCart(product),
+                                      onPressed: () => _addPlain(product),
                                     ),
                                   ],
                                 ),
+                            ],
+                          ),
                         ),
                       ),
                     );
@@ -255,9 +376,12 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                 child: Row(
                   children: [
                     Expanded(
-                      child: Text(
-                        '$_cartCount productos · ${_currencyFmt.format(_cartTotal)}',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      child: GestureDetector(
+                        onTap: _openCartReview,
+                        child: Text(
+                          '$_cartCount productos · ${_currencyFmt.format(_cartTotal)} · Ver carrito',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, decoration: TextDecoration.underline),
+                        ),
                       ),
                     ),
                     FilledButton.icon(
