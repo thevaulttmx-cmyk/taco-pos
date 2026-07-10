@@ -1,9 +1,9 @@
-import 'models.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-
+import 'models.dart';
 import 'database_service.dart';
 import 'checkout_screen.dart';
+import 'edit_order_screen.dart';
 
 class OpenOrdersScreen extends StatefulWidget {
   const OpenOrdersScreen({super.key});
@@ -38,6 +38,13 @@ class _OpenOrdersScreenState extends State<OpenOrdersScreen> {
   Future<void> _openCheckout(Order order) async {
     final result = await Navigator.of(context).push<bool>(
       MaterialPageRoute(builder: (_) => CheckoutScreen(order: order)),
+    );
+    if (result == true) _load();
+  }
+
+  Future<void> _openEdit(Order order) async {
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => EditOrderScreen(order: order)),
     );
     if (result == true) _load();
   }
@@ -80,23 +87,50 @@ class _OpenOrdersScreenState extends State<OpenOrdersScreen> {
               itemBuilder: (context, index) {
                 final order = _orders[index];
                 return Card(
-                  child: ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    title: Text(order.customerName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                    subtitle: Text(
-                      '${order.items.fold<int>(0, (s, i) => s + i.quantity)} productos · ${_timeFmt.format(order.createdAt)}',
-                    ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(_currencyFmt.format(order.total), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                        IconButton(
-                          icon: const Icon(Icons.close, color: Colors.red),
-                          onPressed: () => _deleteOrder(order),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(order.customerName,
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.close, color: Colors.red),
+                              tooltip: 'Cancelar orden',
+                              onPressed: () => _deleteOrder(order),
+                            ),
+                          ],
+                        ),
+                        Text(
+                          '${order.items.fold<int>(0, (s, i) => s + i.quantity)} productos · ${_timeFmt.format(order.createdAt)}',
+                          style: TextStyle(color: Colors.grey[700]),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: () => _openEdit(order),
+                                icon: const Icon(Icons.add),
+                                label: const Text('Agregar'),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: FilledButton.icon(
+                                onPressed: () => _openCheckout(order),
+                                icon: const Icon(Icons.point_of_sale),
+                                label: Text('Cobrar ${_currencyFmt.format(order.total)}'),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
-                    onTap: () => _openCheckout(order),
                   ),
                 );
               },
