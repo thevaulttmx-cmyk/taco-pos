@@ -39,6 +39,7 @@ class OrderItem {
   final String productName;
   final double unitPrice;
   int quantity;
+  String? notes;
 
   OrderItem({
     this.id,
@@ -47,6 +48,7 @@ class OrderItem {
     required this.productName,
     required this.unitPrice,
     this.quantity = 1,
+    this.notes,
   });
 
   double get subtotal => unitPrice * quantity;
@@ -59,6 +61,7 @@ class OrderItem {
       'product_name': productName,
       'unit_price': unitPrice,
       'quantity': quantity,
+      'notes': notes,
     };
   }
 
@@ -70,11 +73,28 @@ class OrderItem {
       productName: map['product_name'] as String,
       unitPrice: (map['unit_price'] as num).toDouble(),
       quantity: map['quantity'] as int,
+      notes: map['notes'] as String?,
     );
   }
 }
 
 enum OrderStatus { open, paid }
+
+class Extra {
+  final int? id;
+  final String name;
+  final double price;
+
+  Extra({this.id, required this.name, required this.price});
+
+  Map<String, dynamic> toMap() => {'id': id, 'name': name, 'price': price};
+
+  factory Extra.fromMap(Map<String, dynamic> map) => Extra(
+        id: map['id'] as int?,
+        name: map['name'] as String,
+        price: (map['price'] as num).toDouble(),
+      );
+}
 
 class Order {
   final int? id;
