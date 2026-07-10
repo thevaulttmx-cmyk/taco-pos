@@ -90,6 +90,9 @@ class PrinterService {
           styles: const PosStyles(align: PosAlign.right),
         ),
       ]);
+      if (item.notes != null && item.notes!.trim().isNotEmpty) {
+        bytes += generator.text('   * ${item.notes}', styles: const PosStyles(bold: false));
+      }
     }
 
     bytes += generator.hr();
@@ -100,6 +103,71 @@ class PrinterService {
         width: 6,
         styles: const PosStyles(align: PosAlign.right, bold: true, height: PosTextSize.size2),
       ),
+    ]);
+
+    bytes += generator.feed(2);
+    bytes += generator.cut();
+
+    return PrintBluetoothThermal.writeBytes(bytes);
+  }
+
+  /// Imprime un ticket corto solo con los productos que se AGREGARON a una
+  /// orden que ya estaba abierta (el cliente pidió más después). Así el
+  /// chef no se confunde con lo que ya había cocinado.
+  Future<bool> printAddendumTicket(
+    String customerName,
+    List<OrderItem> addedItems, {
+    required int orderNumber,
+  }) async {
+    final connected = await isConnected;
+    if (!connected) {
+      final ok = await connectToSavedPrinter();
+      if (!ok) return false;
+    }
+
+    final profile = await CapabilityProfile.load();
+    final generator = Generator(PaperSize.mm58, profile);
+    List<int> bytes = [];
+
+    final timeFmt = DateFormat('dd/MM/yyyy HH:mm');
+    final currencyFmt = NumberFormat.currency(locale: 'es_MX', symbol: '\$');
+
+    bytes += generator.text(
+      'TAKI-TAKI',
+      styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size2, width: PosTextSize.size2),
+    );
+    bytes += generator.text(
+      '+ AGREGADO A ORDEN #$orderNumber',
+      styles: const PosStyles(align: PosAlign.center, bold: true),
+    );
+    bytes += generator.text(timeFmt.format(DateTime.now()), styles: const PosStyles(align: PosAlign.center));
+    bytes += generator.text('Cliente: $customerName', styles: const PosStyles(bold: true));
+    bytes += generator.hr();
+
+    double addedTotal = 0;
+    for (final item in addedItems) {
+      addedTotal += item.subtotal;
+      bytes += generator.row([
+        PosColumn(
+          text: '${item.quantity}x ${item.productName}',
+          width: 8,
+          styles: const PosStyles(bold: true),
+        ),
+        PosColumn(
+          text: currencyFmt.format(item.subtotal),
+          width: 4,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]);
+      if (item.notes != null && item.notes!.trim().isNotEmpty) {
+        bytes += generator.text('   * ${item.notes}');
+      }
+    }
+
+    bytes += generator.hr();
+    bytes += generator.row([
+      PosColumn(text: 'Subtotal agregado', width: 8, styles: const PosStyles(bold: true)),
+      PosColumn(text: currencyFmt.format(addedTotal), width: 4, styles: const PosStyles(align: PosAlign.right, bold: true)),
     ]);
 
     bytes += generator.feed(2);
