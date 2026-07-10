@@ -20,7 +20,7 @@ class DatabaseService {
 
     return openDatabase(
       path,
-      version: 1,
+      version: 3,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE products (
@@ -51,11 +51,39 @@ class DatabaseService {
             product_name TEXT NOT NULL,
             unit_price REAL NOT NULL,
             quantity INTEGER NOT NULL,
+            notes TEXT,
             FOREIGN KEY (order_id) REFERENCES orders (id) ON DELETE CASCADE
           )
         ''');
 
+        await db.execute('''
+          CREATE TABLE extras (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            price REAL NOT NULL
+          )
+        ''');
+
         await _seedDefaultProducts(db);
+        await _seedDefaultExtras(db);
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute('ALTER TABLE order_items ADD COLUMN notes TEXT');
+        }
+        if (oldVersion < 3) {
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS extras (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              name TEXT NOT NULL,
+              price REAL NOT NULL
+            )
+          ''');
+          final existing = await db.query('extras');
+          if (existing.isEmpty) {
+            await _seedDefaultExtras(db);
+          }
+        }
       },
     );
   }
@@ -76,6 +104,36 @@ class DatabaseService {
     for (final p in defaults) {
       await db.insert('products', p.toMap()..remove('id'));
     }
+  }
+
+  // Extras de ejemplo (con costo adicional). Igual que los productos, se
+  // pueden agregar, editar el precio, o eliminar desde la app.
+  Future<void> _seedDefaultExtras(Database db) async {
+    final defaults = [
+      Extra(name: 'Con queso', price: 5),
+      Extra(name: 'Con queso y harina', price: 8),
+    ];
+    for (final e in defaults) {
+      await db.insert('extras', e.toMap()..remove('id'));
+    }
+  }
+
+  // ---------------- EXTRAS (opciones con costo extra) ----------------
+
+  Future<List<Extra>> getExtras() async {
+    final db = await database;
+    final rows = await db.query('extras', orderBy: 'name');
+    return rows.map((r) => Extra.fromMap(r)).toList();
+  }
+
+  Future<int> insertExtra(Extra extra) async {
+    final db = await database;
+    return db.insert('extras', extra.toMap()..remove('id'));
+  }
+
+  Future<void> deleteExtra(int id) async {
+    final db = await database;
+    await db.delete('extras', where: 'id = ?', whereArgs: [id]);
   }
 
   // ---------------- PRODUCTS ----------------
@@ -114,6 +172,7 @@ class DatabaseService {
           'product_name': item.productName,
           'unit_price': item.unitPrice,
           'quantity': item.quantity,
+          'notes': item.notes,
         });
       }
       return orderId;
@@ -165,6 +224,49 @@ class DatabaseService {
     final db = await database;
     final rows = await db.query('order_items', where: 'order_id = ?', whereArgs: [orderId]);
     return rows.map((r) => OrderItem.fromMap(r)).toList();
+  }
+
+  Future<Order?> getOrderById(int orderId) async {
+    final db = await database;
+    final rows = await db.query('orders', where: 'id = ?', whereArgs: [orderId]);
+    if (rows.isEmpty) return null;
+    final items = await _getItemsForOrder(orderId);
+    return Order.fromMap(rows.first, items);
+  }
+
+  /// Agrega productos nuevos a una orden que ya está abierta (el cliente
+  /// pidió más). Devuelve los OrderItem recién insertados (con su id), útil
+  /// para imprimir un ticket solo con lo agregado.
+  Future<List<OrderItem>> addItemsToOrder(int orderId, List<OrderItem> newItems) async {
+    final db = await database;
+    final inserted = <OrderItem>[];
+    await db.transaction((txn) async {
+      for (final item in newItems) {
+        final id = await txn.insert('order_items', {
+          'order_id': orderId,
+          'product_id': item.productId,
+          'product_name': item.productName,
+          'unit_price': item.unitPrice,
+          'quantity': item.quantity,
+          'notes': item.notes,
+        });
+        inserted.add(OrderItem(
+          id: id,
+          orderId: orderId,
+          productId: item.productId,
+          productName: item.productName,
+          unitPrice: item.unitPrice,
+          quantity: item.quantity,
+          notes: item.notes,
+        ));
+      }
+    });
+    return inserted;
+  }
+
+  Future<void> deleteOrderItem(int orderItemId) async {
+    final db = await database;
+    await db.delete('order_items', where: 'id = ?', whereArgs: [orderItemId]);
   }
 
   Future<void> markOrderAsPaid(int orderId, {required double amountPaid, required double change}) async {
